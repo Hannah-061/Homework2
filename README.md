@@ -47,6 +47,8 @@ npm run preview    # 預覽打包結果，網址 http://localhost:4173/Homework2
 
 ## 部署
 
+線上網站使用**真後台**：GitHub repo 的 Actions Variables 設了 `VITE_BACKEND=supabase`、`VITE_SUPABASE_URL`、`VITE_SUPABASE_PUBLISHABLE_KEY`（都是公開的值）。想讓線上網站回到假後台，把 `VITE_BACKEND` 改成 `mock` 再重新部署。
+
 推到 `main` 後，`.github/workflows/deploy.yml` 會自動打包並發布到 GitHub Pages。
 第一次使用，要到 repo 的 Settings → Pages，把 Source 選成 **GitHub Actions**。
 網址：https://hannah-061.github.io/Homework2/
