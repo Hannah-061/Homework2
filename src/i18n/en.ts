@@ -3,6 +3,7 @@ import type { Dict } from './zh-TW';
 export const en: Dict = {
   'app.title': 'Anonymous Chat',
   'app.titleUnread': '({n}) Anonymous Chat',
+  'app.titleMention': '(@) Anonymous Chat',
 
   'lang.label': '切換語言 Language',
   'lang.zh': '中文',
@@ -33,6 +34,7 @@ export const en: Dict = {
   'err.TRANSLATE_FAILED': "Couldn't translate. Try again in a moment.",
   'err.TRANSLATE_QUOTA': "Today's translation limit has been reached.",
   'err.PREVIEW_UNAVAILABLE': 'No link preview available.',
+  'err.TOO_MANY_MENTIONS': 'You can mention up to 5 people in one message.',
   'err.SESSION_EXPIRED': "You've been offline too long. Please join again.",
   'err.NETWORK': 'Something went wrong with the connection. Try again in a moment.',
 
@@ -54,6 +56,7 @@ export const en: Dict = {
   'room.noticeJoined': '{name} joined',
   'room.noticeLeft': '{name} left',
   'room.newMessages': '{n} new messages. Jump to latest.',
+  'room.newMessagesMention': 'Someone mentioned you. Jump to latest.',
   'room.reconnecting': 'Connection lost. Reconnecting…',
   'room.offline': "You're offline",
 
@@ -61,6 +64,8 @@ export const en: Dict = {
   'msg.hidden': 'This message was hidden after several reports',
   'msg.show': 'Show',
   'msg.more': 'More actions',
+  'msg.quote': 'Quote',
+  'msg.forYou': 'This message mentions you',
   'msg.retract': 'Unsend message',
   'msg.report': 'Report this message',
   'msg.retractTitle': 'Unsend this message?',
@@ -76,6 +81,18 @@ export const en: Dict = {
   'msg.zoomImage': 'Enlarge image',
   'msg.imageAlt': 'Image from {name}',
   'msg.linkPreview': 'Link preview',
+
+  'quote.bar': 'Quoting {name}',
+  'quote.cancel': 'Cancel quote',
+  'quote.image': 'Image',
+  'quote.retracted': 'This message was unsent',
+  'quote.hidden': 'This message was hidden',
+  'quote.jump': 'Jump to the quoted message from {name}',
+
+  'mention.menu': 'Mention: pick someone who is online',
+  'mention.limit': 'You can mention up to {n} people in one message',
+  'mention.empty': 'No one online matches',
+  'mention.fromList': 'Mention {name}',
 
   'tr.button': 'Translate',
   'tr.loading': 'Translating…',

@@ -2,6 +2,7 @@
 export const zhTW = {
   'app.title': '匿名聊天室',
   'app.titleUnread': '({n}) 匿名聊天室',
+  'app.titleMention': '(@) 匿名聊天室',
 
   'lang.label': '切換語言 Language',
   'lang.zh': '中文',
@@ -32,6 +33,7 @@ export const zhTW = {
   'err.TRANSLATE_FAILED': '翻譯失敗，請稍後再試',
   'err.TRANSLATE_QUOTA': '今天的翻譯額度用完了',
   'err.PREVIEW_UNAVAILABLE': '無法取得連結預覽',
+  'err.TOO_MANY_MENTIONS': '一則訊息最多提到 5 個人',
   'err.SESSION_EXPIRED': '你已離線太久，請重新進入',
   'err.NETWORK': '連線有問題，請稍後再試。',
 
@@ -53,6 +55,7 @@ export const zhTW = {
   'room.noticeJoined': '{name} 進來了',
   'room.noticeLeft': '{name} 離開了',
   'room.newMessages': '有 {n} 則新訊息，回到最新',
+  'room.newMessagesMention': '有人提到你，回到最新',
   'room.reconnecting': '連線中斷，重新連線中…',
   'room.offline': '目前離線',
 
@@ -60,6 +63,8 @@ export const zhTW = {
   'msg.hidden': '這則訊息因多人檢舉已被遮住',
   'msg.show': '顯示',
   'msg.more': '更多動作',
+  'msg.quote': '引用',
+  'msg.forYou': '這則訊息提到了你',
   'msg.retract': '收回訊息',
   'msg.report': '檢舉這則訊息',
   'msg.retractTitle': '收回這則訊息？',
@@ -75,6 +80,18 @@ export const zhTW = {
   'msg.zoomImage': '放大圖片',
   'msg.imageAlt': '{name} 傳的圖片',
   'msg.linkPreview': '連結預覽',
+
+  'quote.bar': '正在引用 {name}',
+  'quote.cancel': '取消引用',
+  'quote.image': '圖片',
+  'quote.retracted': '這則訊息已被收回',
+  'quote.hidden': '這則訊息已被遮住',
+  'quote.jump': '跳到被引用的訊息：{name}',
+
+  'mention.menu': '提及：選一個在線的人',
+  'mention.limit': '一則訊息最多提到 {n} 個人',
+  'mention.empty': '沒有符合的在線的人',
+  'mention.fromList': '提到 {name}',
 
   'tr.button': '翻譯',
   'tr.loading': '翻譯中…',

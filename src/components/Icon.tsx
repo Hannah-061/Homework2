@@ -47,6 +47,7 @@ const PATHS = {
       <circle cx="12" cy="12" r="3" />
     </>
   ),
+  quote: <path d="M9 7H6a2 2 0 00-2 2v3h5V7zM9 12c0 3-1 5-3 6M20 7h-3a2 2 0 00-2 2v3h5V7zM20 12c0 3-1 5-3 6" />,
   spinner: <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8" />,
 } as const;
 

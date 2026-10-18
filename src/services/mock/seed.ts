@@ -67,6 +67,8 @@ function text(bot: Bot, createdAt: string, body: string, status: Message['status
     image: null,
     createdAt,
     status,
+    mentions: [],
+    replyTo: null,
   };
 }
 
@@ -96,6 +98,8 @@ export function buildSeedHistory(): Message[] {
     image: { url: SAMPLE_IMAGE, width: 440, height: 300 },
     createdAt: minutesAgo(12),
     status: 'normal',
+    mentions: [],
+    replyTo: null,
   });
   list.push(text(az, minutesAgo(8), '哈哈 這張好可愛'));
   return list;

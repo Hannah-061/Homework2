@@ -56,6 +56,7 @@ describe('真後台（SupabaseChatService）', () => {
   const nameA = `整合${tag}A`;
   const nameB = `整合${tag}B`;
   const sent: Message[] = [];
+  let bId = '';
 
   afterAll(async () => {
     for (const m of sent) await a.retract(m.id).catch(() => undefined);
@@ -77,7 +78,7 @@ describe('真後台（SupabaseChatService）', () => {
   });
 
   it('另一個人進入：第一個人收到 presence.joined；代號重複被擋', async () => {
-    await b.join(nameB);
+    bId = (await b.join(nameB)).userId;
     const ev = await waitFor(aEvents, (e) => e.type === 'presence.joined' && e.user.nickname === nameB);
     expect(ev.type).toBe('presence.joined');
     expect(await failsWith(c.join(nameA.toUpperCase()))).toBe('NICKNAME_TAKEN');
@@ -138,6 +139,38 @@ describe('真後台（SupabaseChatService）', () => {
     expect(results[5]).toBe('RATE_LIMITED');
     expect(retry).toBeGreaterThanOrEqual(1);
     for (const m of sent.slice(-5)) await b.retract(m.id).catch(() => undefined);
+  });
+
+  it('提及：被提到的人即時收到、帶著提及資料；一次最多 5 個', async () => {
+    await sleep(10_500);
+    const m = await a.sendText(`嗨 @${nameB} 你好`, { mentions: [{ userId: bId, nickname: nameB }] });
+    sent.push(m);
+    expect(m.mentions).toEqual([{ userId: bId, nickname: nameB }]);
+    const ev = await waitFor(bEvents, (e) => e.type === 'message.new' && e.message.id === m.id);
+    expect(ev.type === 'message.new' && ev.message.mentions[0]?.userId).toBe(bId);
+    // 文字裡沒有 @代號 的提及不算
+    const m2 = await a.sendText('沒有 @ 任何人', { mentions: [{ userId: bId, nickname: nameB }] });
+    sent.push(m2);
+    expect(m2.mentions).toEqual([]);
+    const six = Array.from({ length: 6 }, (_, i) => ({ userId: `00000000-0000-0000-0000-00000000000${i}`, nickname: `x${i}` }));
+    expect(await failsWith(a.sendText('x', { mentions: six }))).toBe('TOO_MANY_MENTIONS');
+  });
+
+  it('引用：帶出被引用者與摘要；原訊息收回後，引用區即時清掉', async () => {
+    const orig = await a.sendText('這是會被引用然後收回的訊息');
+    sent.push(orig);
+    await waitFor(bEvents, (e) => e.type === 'message.new' && e.message.id === orig.id);
+    const q = await b.sendText('我引用你', { replyTo: orig.id });
+    sent.push(q);
+    expect(q.replyTo).toMatchObject({ messageId: orig.id, nickname: nameA, kind: 'text', state: 'normal' });
+    expect(q.replyTo?.preview).toBe('這是會被引用然後收回的訊息');
+    await waitFor(aEvents, (e) => e.type === 'message.new' && e.message.id === q.id);
+
+    await a.retract(orig.id);
+    const ev = await waitFor(bEvents, (e) => e.type === 'message.updated' && e.message.id === q.id && e.message.replyTo?.state === 'retracted');
+    expect(ev.type === 'message.updated' && ev.message.replyTo?.preview).toBeNull();
+    // 已收回的訊息不能再被引用
+    expect(await failsWith(b.sendText('再引用', { replyTo: orig.id }))).toBe('MESSAGE_NOT_FOUND');
   });
 
   it('翻譯與連結預覽：Edge Function 還沒部署時，會優雅地失敗（不會當機）', async () => {

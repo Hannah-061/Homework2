@@ -17,15 +17,20 @@ type Confirm = { kind: 'leave' } | { kind: 'retract'; message: Message } | { kin
 export function ChatRoom() {
   const { t, lang } = useI18n();
   const actions = useChatActions();
-  const { toast, hiddenUnread } = useChatState();
+  const { toast, hiddenUnread, hiddenMention } = useChatState();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [viewing, setViewing] = useState<Message | null>(null);
 
   // 在別的分頁時，標題顯示未讀數：(3) 匿名聊天室
   useEffect(() => {
-    document.title = hiddenUnread > 0 ? t('app.titleUnread', { n: hiddenUnread }) : t('app.title');
-  }, [hiddenUnread, t]);
+    // 有人提到你時優先顯示 (@)，其次是一般的未讀數
+    document.title = hiddenMention
+      ? t('app.titleMention')
+      : hiddenUnread > 0
+        ? t('app.titleUnread', { n: hiddenUnread })
+        : t('app.title');
+  }, [hiddenUnread, hiddenMention, t]);
   useEffect(() => {
     const onVisible = () => {
       if (!document.hidden) actions.clearHiddenUnread();
@@ -73,6 +78,7 @@ export function ChatRoom() {
         <OnlineSidebar />
         <main className="chat__main">
           <MessageList
+            onQuote={(message) => actions.setQuote(message)}
             onRetract={(message) => setConfirm({ kind: 'retract', message })}
             onReport={(message) => setConfirm({ kind: 'report', message })}
             onOpenImage={setViewing}

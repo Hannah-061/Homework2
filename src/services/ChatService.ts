@@ -19,6 +19,26 @@ export interface ImageInfo {
   height: number;
 }
 
+/** 被提及（@）的人。userId 是當時選的那個人，之後別人用了同一個代號不會被算進來 */
+export interface Mention {
+  userId: string;
+  nickname: string;
+}
+
+/**
+ * 這則訊息引用了哪一則。摘要是送出當下記下的；
+ * 原訊息之後被收回或被檢舉遮住時，後台會把摘要清掉、state 改掉。
+ */
+export interface ReplyRef {
+  messageId: string;
+  senderId: string;
+  nickname: string;
+  kind: MessageKind;
+  /** 原文前面幾十個字；原訊息是圖片、或已被收回／遮住時是 null */
+  preview: string | null;
+  state: MessageStatus;
+}
+
 export interface Message {
   id: string;
   senderId: string;
@@ -29,6 +49,10 @@ export interface Message {
   /** ISO 8601，UTC，例如 2026-10-18T14:32:05Z */
   createdAt: string;
   status: MessageStatus;
+  /** 文字訊息裡被 @ 的人（最多 5 個）；沒有就是空陣列 */
+  mentions: Mention[];
+  /** 引用的訊息；沒有引用就是 null */
+  replyTo: ReplyRef | null;
 }
 
 export interface OnlineUser {
@@ -63,6 +87,7 @@ export type ErrorCode =
   | 'MESSAGE_NOT_FOUND'
   | 'CANNOT_REPORT_OWN'
   | 'ALREADY_REPORTED'
+  | 'TOO_MANY_MENTIONS'
   | 'TRANSLATE_FAILED'
   | 'TRANSLATE_QUOTA'
   | 'PREVIEW_UNAVAILABLE'
@@ -115,6 +140,12 @@ export interface TranslateResult {
   targetLang: Lang;
 }
 
+export interface SendOptions {
+  /** 要引用的訊息編號 */
+  replyTo?: string;
+  mentions?: Mention[];
+}
+
 export type ChatEventListener = (event: ChatEvent) => void;
 
 export interface ChatService {
@@ -129,10 +160,10 @@ export interface ChatService {
   /** room.leave：釋放代號，並忘記上次的代號 */
   leave(): Promise<void>;
 
-  /** message.sendText */
-  sendText(text: string): Promise<Message>;
-  /** message.sendImage（檔案已經在前端檢查並重新壓縮過） */
-  sendImage(file: File): Promise<Message>;
+  /** message.sendText；可以帶引用（被引用訊息的編號）與提及（最多 5 個在線的人） */
+  sendText(text: string, options?: SendOptions): Promise<Message>;
+  /** message.sendImage（檔案已經在前端檢查並重新壓縮過）；圖片也可以帶引用 */
+  sendImage(file: File, options?: Pick<SendOptions, 'replyTo'>): Promise<Message>;
   /** message.retract */
   retract(messageId: string): Promise<void>;
   /** message.report */
@@ -162,6 +193,10 @@ export const LIMITS = {
   /** 10 秒內最多 5 則（含圖片） */
   rateWindowMs: 10_000,
   rateMaxMessages: 5,
+  /** 一則訊息最多提到幾個人 */
+  mentionMax: 5,
+  /** 引用區顯示原文的前幾個字（後台存的摘要長度） */
+  replyPreviewMax: 80,
   /** 檢舉達這個人數就遮住 */
   reportHideAt: 3,
   /** 別人離開後，等這麼久還沒回來才顯示「離開了」 */

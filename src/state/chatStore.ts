@@ -8,6 +8,7 @@ import {
   type ErrorCode,
   type Lang,
   type LinkPreview,
+  type Mention,
   type Message,
   type OnlineUser,
 } from '../services/ChatService';
@@ -38,6 +39,9 @@ export interface Pending {
   previewUrl: string | null;
   state: 'sending' | 'failed';
   createdAt: string;
+  /** 送出時帶的引用與提及（重新傳送、被擋下時要還原） */
+  quote: Message | null;
+  mentions: Mention[];
 }
 
 export interface TranslationState {
@@ -78,6 +82,14 @@ export interface ChatState {
   atBottom: boolean;
   /** 在別的分頁時累積的未讀數（顯示在分頁標題） */
   hiddenUnread: number;
+  /** 往上看舊訊息時，新來的訊息裡有幾則「提到你」（含引用你的） */
+  unseenMentions: number;
+  /** 在別的分頁時，有沒有人提到你（分頁標題顯示 (@)） */
+  hiddenMention: boolean;
+  /** 輸入框上方「正在引用」的那則訊息 */
+  quoting: Message | null;
+  /** 點在線名單的人，要求把 @代號 放進輸入框（n 是第幾次，讓輸入框知道是新的要求） */
+  mentionRequest: { user: OnlineUser; n: number } | null;
   /** 被頻率限制時，輸入框鎖到什麼時候（毫秒時間戳；0 = 沒鎖） */
   rateLockUntil: number;
   revealed: ReadonlySet<string>;
@@ -106,6 +118,10 @@ const initialState: ChatState = {
   unseen: 0,
   atBottom: true,
   hiddenUnread: 0,
+  unseenMentions: 0,
+  hiddenMention: false,
+  quoting: null,
+  mentionRequest: null,
   rateLockUntil: 0,
   revealed: new Set(),
   translations: {},
@@ -189,7 +205,8 @@ export class ChatStore {
 
   // ---------- 送訊息 ----------
 
-  async sendText(text: string): Promise<SendResult> {
+  async sendText(text: string, mentions: Mention[] = []): Promise<SendResult> {
+    const quote = this.state.quoting;
     const pending: Pending = {
       id: nextId('p'),
       kind: 'text',
@@ -197,9 +214,11 @@ export class ChatStore {
       previewUrl: null,
       state: 'sending',
       createdAt: new Date().toISOString(),
+      quote,
+      mentions,
     };
-    this.set((s) => ({ pending: [...s.pending, pending], composerError: null }));
-    return this.deliver(pending, () => this.service.sendText(text));
+    this.set((s) => ({ pending: [...s.pending, pending], composerError: null, quoting: null }));
+    return this.deliver(pending, () => this.service.sendText(text, { replyTo: quote?.id, mentions }));
   }
 
   async resend(pendingId: string): Promise<SendResult> {
@@ -207,7 +226,7 @@ export class ChatStore {
     if (!item || item.kind !== 'text' || item.text === null) return { ok: false };
     const text = item.text;
     this.patchPending(pendingId, { state: 'sending' });
-    return this.deliver(item, () => this.service.sendText(text));
+    return this.deliver(item, () => this.service.sendText(text, { replyTo: item.quote?.id, mentions: item.mentions }));
   }
 
   /** 傳圖片：先在這裡檢查並重新壓縮，再交給後台 */
@@ -220,6 +239,7 @@ export class ChatStore {
       this.set({ composerError: { code: err.code } });
       return { ok: false, code: err.code };
     }
+    const quote = this.state.quoting;
     const pending: Pending = {
       id: nextId('p'),
       kind: 'image',
@@ -227,9 +247,11 @@ export class ChatStore {
       previewUrl: URL.createObjectURL(prepared),
       state: 'sending',
       createdAt: new Date().toISOString(),
+      quote,
+      mentions: [],
     };
-    this.set((s) => ({ pending: [...s.pending, pending], composerError: null }));
-    return this.deliver(pending, () => this.service.sendImage(prepared));
+    this.set((s) => ({ pending: [...s.pending, pending], composerError: null, quoting: null }));
+    return this.deliver(pending, () => this.service.sendImage(prepared, { replyTo: quote?.id }));
   }
 
   private async deliver(pending: Pending, send: () => Promise<Message>): Promise<SendResult> {
@@ -241,15 +263,39 @@ export class ChatStore {
     } catch (e) {
       const err = toAppError(e);
       if (err.code === 'RATE_LIMITED') {
-        // 太快了：不留在畫面上，文字還給輸入框，並鎖住一下
+        // 太快了：不留在畫面上，文字和引用還給輸入框，並鎖住一下
         this.removePending(pending.id);
         const secs = err.retryAfterSeconds ?? 5;
-        this.set({ rateLockUntil: Date.now() + secs * 1000 });
+        this.set((s) => ({ rateLockUntil: Date.now() + secs * 1000, quoting: s.quoting ?? pending.quote }));
+        return { ok: false, code: err.code };
+      }
+      if (err.code === 'MESSAGE_NOT_FOUND' && pending.quote) {
+        // 被引用的訊息剛好被收回或遮住了：這則先不送，讓使用者自己決定
+        this.removePending(pending.id);
+        this.set({ composerError: { code: 'MESSAGE_NOT_FOUND' } });
         return { ok: false, code: err.code };
       }
       this.patchPending(pending.id, { state: 'failed' });
       return { ok: false, code: err.code };
     }
+  }
+
+  // ---------- 引用、提及 ----------
+
+  /** 開始引用某則訊息（只有正常狀態的可以引用） */
+  setQuote(message: Message): void {
+    if (message.status !== 'normal') return;
+    this.set({ quoting: message });
+  }
+
+  clearQuote(): void {
+    if (this.state.quoting) this.set({ quoting: null });
+  }
+
+  /** 點在線名單的人：要求輸入框放進 @代號 */
+  requestMention(user: OnlineUser): void {
+    if (user.userId === this.state.userId) return;
+    this.set((s) => ({ mentionRequest: { user, n: (s.mentionRequest?.n ?? 0) + 1 } }));
   }
 
   private patchPending(id: string, patch: Partial<Pending>): void {
@@ -343,13 +389,17 @@ export class ChatStore {
   // ---------- 畫面回報的狀態 ----------
 
   setAtBottom(atBottom: boolean): void {
-    if (atBottom === this.state.atBottom && (!atBottom || this.state.unseen === 0)) return;
-    this.set((s) => ({ atBottom, unseen: atBottom ? 0 : s.unseen }));
+    if (atBottom === this.state.atBottom && (!atBottom || (this.state.unseen === 0 && this.state.unseenMentions === 0))) return;
+    this.set((s) => ({ atBottom, unseen: atBottom ? 0 : s.unseen, unseenMentions: atBottom ? 0 : s.unseenMentions }));
   }
 
   /** 回到分頁時，清掉標題上的未讀數 */
   clearHiddenUnread(): void {
-    if (this.state.hiddenUnread !== 0) this.set({ hiddenUnread: 0 });
+    if (this.state.hiddenUnread !== 0 || this.state.hiddenMention) this.set({ hiddenUnread: 0, hiddenMention: false });
+  }
+
+  showComposerError(code: ErrorCode): void {
+    this.set({ composerError: { code } });
   }
 
   dismissComposerError(): void {
@@ -431,10 +481,17 @@ export class ChatStore {
   private addMessage(message: Message, own: boolean): void {
     if (this.state.messages.some((m) => m.id === message.id)) return;
     const mine = own || message.senderId === this.state.userId;
+    // 提到你：被 @、或你的訊息被別人引用
+    const forMe =
+      !mine &&
+      this.state.userId !== null &&
+      (message.mentions.some((m) => m.userId === this.state.userId) || message.replyTo?.senderId === this.state.userId);
     this.set((s) => ({
       messages: sortMessages([...s.messages, message]),
       unseen: !mine && !s.atBottom ? s.unseen + 1 : s.unseen,
+      unseenMentions: forMe && !s.atBottom ? s.unseenMentions + 1 : s.unseenMentions,
       hiddenUnread: !mine && document.hidden ? s.hiddenUnread + 1 : s.hiddenUnread,
+      hiddenMention: forMe && document.hidden ? true : s.hiddenMention,
     }));
   }
 

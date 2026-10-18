@@ -262,7 +262,7 @@ flowchart TB
 1. **建立專案**：supabase.com 註冊，New project（方案 Free；區域選離台灣近的 Tokyo 或 Singapore；資料庫密碼存進密碼管理器）。
 2. **打開匿名登入**：Authentication → Sign In / Providers → Anonymous Sign-Ins。（預設每個 IP 每小時 30 次，很多人用同一個網路時可到 Authentication → Rate Limits 調高。）
 3. **取得公開值**：專案上方的 Connect → 複製 Project URL 與 Publishable key（`sb_publishable_...`）。這兩個可以公開；**不要複製 Secret key**。
-4. **資料庫**：SQL Editor 依序執行 `001_tables.sql`、`002_functions.sql`、`003_storage.sql`、`004_cleanup.sql`（黃色警告「destructive operations」按 Run query 即可，只是重建規則）。
+4. **資料庫**：SQL Editor 依序執行 `001_tables.sql`、`002_functions.sql`、`003_storage.sql`、`004_cleanup.sql`（黃色警告「destructive operations」按 Run query 即可，只是重建規則）。之後追加的 `006_mentions_quotes.sql`（提及與引用）也在這裡執行。
 5. **Secrets**：Edge Functions → Secrets，新增 `CRON_SECRET`（隨機密碼）與 `ALLOWED_ORIGINS`（`https://hannah-061.github.io,http://localhost:5173`，複製貼上）。
 6. **兩個 Edge Function**：Edge Functions → Deploy a new function → Via Editor，名稱 `cleanup`、`link-preview`，貼上 `supabase/functions/` 對應的程式，Deploy。**兩個都要到 Settings 把 Verify JWT with legacy secret 關掉**。
 7. **排程**：把 `005_cron.sql.template` 的三個 `__...__` 換成專案網址、公開金鑰、`CRON_SECRET`，在 SQL Editor 執行。
@@ -284,8 +284,8 @@ flowchart TB
 |---|---|---|---|---|
 | `room.join` | 用代號進入聊天室 | `nickname` | 自己的 `userId`、最近 50 則 `messages`、目前的 `onlineUsers` | `NICKNAME_INVALID`、`NICKNAME_TAKEN`、`ROOM_FULL` |
 | `room.leave` | 離開，釋放代號 | 無 | 無 | 無 |
-| `message.sendText` | 送出文字 | `text` | 完整的 `Message` | `TEXT_EMPTY`、`TEXT_TOO_LONG`、`RATE_LIMITED`、`NOT_JOINED` |
-| `message.sendImage` | 送出圖片 | `file`（圖片檔） | 完整的 `Message` | `IMAGE_TOO_LARGE`、`IMAGE_TYPE_NOT_ALLOWED`、`RATE_LIMITED`、`NOT_JOINED` |
+| `message.sendText` | 送出文字（可帶引用與提及） | `text`、選填 `replyTo`（被引用訊息的編號）、選填 `mentions`（最多 5 個 `Mention`） | 完整的 `Message` | `TEXT_EMPTY`、`TEXT_TOO_LONG`、`TOO_MANY_MENTIONS`、`MESSAGE_NOT_FOUND`（被引用的訊息已收回／遮住）、`RATE_LIMITED`、`NOT_JOINED` |
+| `message.sendImage` | 送出圖片（可帶引用） | `file`（圖片檔）、選填 `replyTo` | 完整的 `Message` | `IMAGE_TOO_LARGE`、`IMAGE_TYPE_NOT_ALLOWED`、`MESSAGE_NOT_FOUND`、`RATE_LIMITED`、`NOT_JOINED` |
 | `message.retract` | 收回自己的訊息 | `messageId` | 無 | `NOT_OWNER`、`MESSAGE_NOT_FOUND` |
 | `message.report` | 檢舉別人的訊息 | `messageId` | 無 | `CANNOT_REPORT_OWN`、`ALREADY_REPORTED`、`MESSAGE_NOT_FOUND` |
 | `message.translate` | 翻譯一則訊息（由前端在瀏覽器內完成；`ChatService.canTranslate()` 為 false 時畫面不顯示按鈕） | `messageId`、`targetLang`（`zh` 或 `en`，由前端依第 7 節規則算好） | `translatedText`、`targetLang` | `TRANSLATE_FAILED`（`TRANSLATE_QUOTA` 只有假後台會用到） |
@@ -319,6 +319,8 @@ flowchart TB
 | `image` | 物件或空 | 圖片訊息才有：`url`（圖片網址）、`width`、`height`（寬高，讓畫面先留好位置，圖片載入時才不會跳動）；被收回後清空 |
 | `createdAt` | 文字 | 時間，格式為 ISO 8601 的 UTC 時間，例如 `2026-10-18T14:32:05Z`。顯示時轉成使用者所在時區（Q19） |
 | `status` | `"normal"`、`"retracted"`、`"hidden"` | 正常 / 已收回（Q5）/ 因被檢舉達 3 人而遮住（Q6） |
+| `mentions` | `Mention[]` | 文字訊息裡被 `@` 的人（最多 5 個），沒有就是空陣列；被收回後清空 |
+| `replyTo` | `ReplyRef` 或空 | 這則訊息引用的訊息；沒有引用就是空；自己被收回後清空 |
 
 範例：
 
@@ -331,9 +333,28 @@ flowchart TB
   "text": "大家好 👋 https://example.com",
   "image": null,
   "createdAt": "2026-10-18T14:32:05Z",
-  "status": "normal"
+  "status": "normal",
+  "mentions": [],
+  "replyTo": null
 }
 ```
+
+**`Mention`（被提到的人）**
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `userId` | 文字 | 被提到的人的匿名身分編號（送出當下選的那個人；之後別人用了同一個代號不會被算進來） |
+| `nickname` | 文字 | 當時的代號；文字裡用 `@代號` 表示 |
+
+**`ReplyRef`（引用）**
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `messageId` | 文字 | 被引用訊息的編號（點引用區時用它捲到原訊息） |
+| `senderId`、`nickname` | 文字 | 被引用的人；`senderId` 也用來判斷「你的訊息被引用了」 |
+| `kind` | `"text"` 或 `"image"` | 被引用的是文字或圖片 |
+| `preview` | 文字或空 | 原文前 80 個字，**由後台在送出當下記下，前端無法偽造**；原訊息是圖片、或已被收回／遮住時是空 |
+| `state` | `"normal"`、`"retracted"`、`"hidden"` | 原訊息被收回或遮住時，後台把引用它的所有訊息的 `preview` 清掉並改這個狀態（Q5），所有人收到 `message.updated` |
 
 **`OnlineUser`（在線的人）**
 
@@ -367,7 +388,10 @@ flowchart TB
 | 約定中的東西 | 階段二實際用什麼 |
 |---|---|
 | 指令 `room.join` | 資料庫函式 `claim_nickname`，成功後把自己登記到 Presence |
-| 指令 `message.sendText` / `sendImage` | 資料庫函式 `send_message`（內含頻率限制、字數檢查）。圖片先上傳到 Storage，再用函式送出訊息 |
+| 指令 `message.sendText` / `sendImage` | 資料庫函式 `send_message`（內含頻率限制、字數檢查；新增選填參數 `p_reply_to`、`p_mentions`，舊版呼叫方式照舊可用）。圖片先上傳到 Storage，再用函式送出訊息 |
+| 提及的驗證 | 在 `send_message` 裡：最多 5 個；每個人必須**現在在線**、不是自己、而且文字裡真的有 `@代號`，否則忽略 |
+| 引用的驗證 | 在 `send_message` 裡：被引用的訊息必須存在且是正常狀態（已收回或被遮住的不能引用）；摘要由後台從原訊息取，不採用前端送來的 |
+| 收回、遮住時同步引用區 | 在 `retract_message`、`report_message` 裡一併更新所有 `reply_to` 指向它的訊息 |
 | 指令 `message.retract` | 資料庫函式 `retract_message` |
 | 指令 `message.report` | 資料庫函式 `report_message`（每人每則限一次，滿 3 人把 `status` 設為 `hidden`） |
 | 指令 `message.translate` | 瀏覽器內建的 Translator API（不經過 Supabase） |
@@ -453,6 +477,8 @@ sequenceDiagram
 
 | 動作 | 流程 |
 |---|---|
+| 引用 | 「⋯」選單（或長按）→「引用」→ 輸入框上方出現引用條 → 輸入文字送出 → `message.sendText` 帶 `replyTo` → 後台記下摘要 → 所有人看到帶引用區的新訊息；被引用的人視為「被提到」 |
+| 提及 | 輸入框打 `@` → 選在線的人（或點在線名單）→ 輸入框出現 `@代號` → 送出時只帶「文字裡還在的」提及 → 被提到的人那則訊息醒目，分頁在背景時標題顯示 (@) |
 | 收回 | 按自己訊息的「收回」→ 確認 → `message.retract` → 後台把 `status` 設成 `retracted` 並清掉文字／圖片 → 所有人收到 `message.updated`，該則改顯示「這則訊息已被收回」 |
 | 檢舉 | 按別人訊息的「檢舉」→ 確認 → `message.report` → 累積滿 3 人 → 後台把 `status` 設成 `hidden` → 所有人收到 `message.updated`，該則被遮住，點「顯示」才看得到（僅限自己這次的畫面） |
 | 翻譯 | 按「翻譯」→ `message.translate` → 回傳後顯示在原文下方；只有自己看得到；按「隱藏翻譯」收起（再按「翻譯」直接用已保存的結果，不用重新呼叫）|
@@ -547,6 +573,8 @@ sequenceDiagram
 
 **B2. 在線名單**
 
+> 點名單裡的**別人** = 把 `@代號` 放進輸入框（Q1 的 C）；自己那一列不能點。手機的名單浮層點了會自動收起，方便直接打字。
+
 | 元素 | 行為 |
 |---|---|
 | 人數標題 | 「在線 12 人」 |
@@ -558,6 +586,10 @@ sequenceDiagram
 
 | 元素 | 行為 |
 |---|---|
+| 「⋯」選單的「引用」 | 每則正常狀態的訊息（自己和別人的）都有；按了之後輸入框上方出現引用條。已收回、被遮住的訊息沒有這個選項 |
+| 引用區 | 在訊息氣泡最上面（圖片訊息則在圖片上方）：被引用的人的代號＋原文前面幾十個字（最多 2 行，超過截斷）；引用圖片顯示小圖示加「圖片」。**點一下**捲到原訊息並閃一下；原訊息已被清掉就沒有反應（Q4）。原訊息被收回顯示「這則訊息已被收回」、被遮住顯示「這則訊息已被遮住」，原文不顯示（Q5） |
+| 提及標籤 | 文字裡的 `@代號` 用標籤樣式標出；被提到的是你，標籤更醒目 |
+| 「提到你」的訊息 | 被 `@` 或訊息被你引用的那一則：醒目的外框，meta 列有「這則訊息提到了你」的小標（Q2、Q6） |
 | 一般訊息（別人） | 靠左；顯示代號、時間（如 14:32）、內容（Q7、Q19） |
 | 一般訊息（自己） | 靠右；顏色不同；顯示時間，不重複顯示自己的代號 |
 | 日期分隔線 | 跨日時，中間插一行「2026/10/18」（Q19） |
@@ -578,6 +610,8 @@ sequenceDiagram
 
 | 元素 | 行為 |
 |---|---|
+| 提及選單 | 游標前面正在打 `@`（`@` 前是開頭或空白）時，輸入框上方跳出**目前在線**的人（不含自己，最多 8 個），繼續打字篩選；上下鍵選、Enter 或 Tab 或點一下確定（變成 `@代號 `）、Esc 關閉。已經提到 5 個人時，選單改成提示「一則訊息最多提到 5 個人」（Q1、Q7） |
+| 引用條 | 引用中時顯示在輸入框上方：「正在引用 小明」＋原文摘要＋✕（取消）。送出後自動消失；送太快被擋下時會還原 |
 | 文字輸入框 | 最多 500 字；超過 450 字開始顯示剩餘字數；超過的部分不可輸入。電腦版：Enter 送出、Shift+Enter 換行。手機版：Enter 換行，用送出鈕送出 |
 | 表情符號按鈕 | 點開選單，選一個就插入輸入框游標位置（Q4） |
 | 圖片按鈕 | 開啟檔案選擇（手機可拍照或選相簿）；電腦版也支援貼上圖片、拖進輸入區（Q13） |
@@ -589,6 +623,7 @@ sequenceDiagram
 **B5. 切換分頁時的提示（Q8）**
 
 - 使用者在別的分頁時，來了新訊息，網頁標題變成「(3) 匿名聊天室」；回到這個分頁後恢復原標題。
+- **有人提到你**（被 `@`，或你的訊息被引用）時，標題改成「(@) 匿名聊天室」，優先於一般的未讀數（Q2）。你在看舊訊息時，「新訊息」箭頭按鈕也會換成醒目的樣子（Q2）。
 - 不使用提示音、不使用瀏覽器通知。
 
 **B6. 圖片放大檢視**
@@ -671,6 +706,7 @@ sequenceDiagram
 
 | 風險 | 例子 | 前端怎麼做 | 後台怎麼做 |
 |---|---|---|---|
+| **提及被濫用成「通知全場」**、**偽造引用內容** | 一次 @ 所有人洗版；前端送一段假的「被引用原文」 | 選單超過 5 個人就不再跳出 | 後台限制一則最多 5 個提及，且只認「現在在線、文字裡真的有 @代號」的人；引用的摘要由後台從原訊息取，前端送什麼都不採用；已收回或被遮住的訊息不能被引用 |
 | **XSS（跨站腳本攻擊）**：訊息或代號裡夾帶程式碼，在別人的瀏覽器執行 | 代號輸入 `<script>…</script>` 或 `<img onerror=…>` | React 預設會把所有文字當純文字顯示。**規定：全專案禁止使用 `dangerouslySetInnerHTML`**（React 中會把文字當程式碼執行的寫法）。網址轉連結時，用程式一段一段組出元素，不拼 HTML 字串 | 儲存原樣文字，不做轉換 |
 | **危險連結** | `javascript:alert(1)`、`data:` 網址 | 只把 `http://`、`https://` 開頭的轉成連結。連結一律 `target="_blank"` 並加 `rel="noopener noreferrer nofollow"` | 連結預覽 Function 同樣只接受 http/https |
 | **代號偽裝** | 用看不見的字元（零寬空白）、文字方向控制字元（讓文字倒著顯示）、全形半形混用，冒充別人的名字 | 輸入時就過濾 | 在 `claim_nickname` 裡拒絕控制字元和不可見字元；比對「是否重複」時，忽略大小寫、全形半形、前後空白差異 |
@@ -736,6 +772,8 @@ sequenceDiagram
 | **一次多張圖片、影片、檔案** | 儲存與流量成本高，審核風險高（Q13） |
 | **訊息內容自動翻譯所有人** | 你選擇的是「想看才按」，且只有按的人看到（Q17）。翻譯一律是個人行為 |
 | **手機、Safari、Firefox 的翻譯** | 它們沒有內建翻譯功能（第 3.3 節）。要支援就得改用付費的翻譯服務，與「全部免費」的目標衝突 |
+| **提及離線的人、提及所有人（@all）、對被提到的人發通知** | 匿名代號不是固定身分，離線的人沒有可以「找到他」的方式；@all 容易變成洗版；你已決定不做提示音與瀏覽器通知（Q2、Q7） |
+| **引用的串接顯示（引用一則本身就引用別人的訊息）** | 只顯示一層，避免畫面越疊越深（Q4） |
 | **除了中文／英文以外的介面語言** | 需求是中英切換 |
 | **圖片自動內容審核** | 需要額外付費服務；先靠檢舉 |
 | **自己的後端伺服器** | 全部用 Supabase 提供的功能即可，不用另外維護伺服器 |
@@ -817,6 +855,7 @@ Homework2/
     │   ├── 002_functions.sql      claim_nickname、heartbeat、release_nickname、send_message、retract_message、report_message
     │   ├── 003_storage.sql        圖片資料夾 chat-images（5 MB、4 種格式、只能傳到自己的資料夾）
     │   ├── 004_cleanup.sql        清理用函式 prune_messages、orphan_images（只有後台能呼叫）
+    │   ├── 006_mentions_quotes.sql 提及與引用：新欄位、send_message 多兩個選填參數、收回／遮住時同步引用區
     │   └── 005_cron.sql.template  定時排程的範本（填入密碼後才能執行，填好的版本不進 repo）
     └── functions/                 Edge Functions：在後台編輯器貼上；每個函式是單一檔案
         ├── link-preview/          連結預覽（驗證登入、防 SSRF、快取 24 小時）
@@ -944,6 +983,18 @@ https://hannah-061.github.io/Homework2/
 - [ ] 手機鎖屏 30 秒後再打開：自動重連、補上漏掉的訊息、不洗版進出提示（→ Q9、Q12）
 - [ ] 關掉手機網路再打開：顯示重新連線提示，恢復後自動繼續
 
+**提及與引用**
+- [ ] 輸入 `@` 跳出在線的人（不含自己）；選了之後文字裡出現 `@代號`，送出後兩台裝置都看到標籤（→ Q1）
+- [ ] 點在線名單的人，輸入框出現 `@代號`；手機上名單浮層會自動收起（→ Q1）
+- [ ] 一次提到第 6 個人時選單改顯示上限提示；用腳本繞過前端送 6 個，後台回 `TOO_MANY_MENTIONS`（→ Q7）
+- [ ] 手動打 `@某某` 但沒從選單選的，不會醒目、不會通知（→ Q1）
+- [ ] 被提到的人：那一則訊息醒目＋小標；在看舊訊息時箭頭按鈕變醒目；分頁在背景時標題是 (@)；沒有任何提示音或瀏覽器通知（→ Q2）
+- [ ] 「⋯」選單與長按都有「引用」；引用條顯示在輸入框上方，✕ 可取消；文字與圖片都能帶引用（→ Q3）
+- [ ] 送出後引用區在氣泡最上面；點它會捲到原訊息並閃一下；原訊息已被清掉時點了沒反應，仍看得到摘要（→ Q4）
+- [ ] 原訊息被收回：所有引用它的訊息即時改顯示「這則訊息已被收回」；被 3 人檢舉遮住：改顯示「這則訊息已被遮住」；已收回的訊息沒有「引用」選項（→ Q5）
+- [ ] 你的訊息被別人引用，跟被 `@` 一樣醒目、標題也是 (@)（→ Q6）
+- [ ] 被提到的人離開、別人用了同一個代號，新來的人不會變成「被提到」（→ Q7）
+
 **訊息功能**
 - [ ] 文字、表情、網址、圖片都能在兩台裝置上正確顯示
 - [ ] 在 Supabase Storage 看到圖片；超過歷史範圍的訊息被清理後，檔案也被刪除（→ Q13）
@@ -978,7 +1029,10 @@ https://hannah-061.github.io/Homework2/
 | 單則文字訊息上限 | 500 字 | 第 5、7、9 節 |
 | 圖片：格式／大小／尺寸 | JPG、PNG、GIF、WebP／5 MB／4096×4096 | 第 7、9 節 |
 | 歷史保留 | 最近 50 則 | Q2 |
-| 頻率限制 | 10 秒內最多 5 則 | Q14 |
+| 頻率限制 | 10 秒內最多 5 則（引用與提及不另外計次） | Q14 |
+| 一則訊息最多提及 | 5 個人 | Q7 |
+| 引用摘要長度 | 原文前 80 個字（畫面上最多顯示 2 行） | Q4 |
+| 提及選單 | 最多列 8 個在線的人，依輸入的字篩選 | Q1 |
 | 檢舉遮住門檻 | 3 人 | Q6 |
 | 離開提示的緩衝時間 | 10 秒 | 6.3 |
 | 代號釋放時間 | 超過 60 秒沒回報就釋放（每 20 秒回報一次） | 6.3 |

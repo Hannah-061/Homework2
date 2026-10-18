@@ -10,7 +10,10 @@ import {
   type Lang,
   type LinkPreview,
   type Message,
+  type MessageKind,
+  type MessageStatus,
   type OnlineUser,
+  type SendOptions,
   type TranslateResult,
 } from '../ChatService';
 import { readImageSize } from '../../lib/image';
@@ -48,6 +51,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'MESSAGE_NOT_FOUND',
   'CANNOT_REPORT_OWN',
   'ALREADY_REPORTED',
+  'TOO_MANY_MENTIONS',
   'TRANSLATE_FAILED',
   'TRANSLATE_QUOTA',
   'PREVIEW_UNAVAILABLE',
@@ -71,8 +75,15 @@ interface DbMessage {
   image_path: string | null;
   image_width: number | null;
   image_height: number | null;
-  status: 'normal' | 'retracted' | 'hidden';
+  status: MessageStatus;
   created_at: string;
+  mentions: { user_id: string; nickname: string }[] | null;
+  reply_to: string | null;
+  reply_sender_id: string | null;
+  reply_nickname: string | null;
+  reply_preview: string | null;
+  reply_kind: MessageKind | null;
+  reply_state: MessageStatus | null;
 }
 
 interface PresenceMeta {
@@ -173,13 +184,20 @@ export class SupabaseChatService implements ChatService {
     this.known.clear();
   }
 
-  async sendText(text: string): Promise<Message> {
-    const { data, error } = await this.sb.rpc('send_message', { p_kind: 'text', p_text: text });
+  async sendText(text: string, options?: SendOptions): Promise<Message> {
+    const { data, error } = await this.sb.rpc('send_message', {
+      p_kind: 'text',
+      p_text: text,
+      p_reply_to: options?.replyTo ?? null,
+      p_mentions: options?.mentions?.length
+        ? options.mentions.map((m) => ({ user_id: m.userId, nickname: m.nickname }))
+        : null,
+    });
     if (error) throw toError(error);
     return this.toMessage(data as DbMessage);
   }
 
-  async sendImage(file: File): Promise<Message> {
+  async sendImage(file: File, options?: Pick<SendOptions, 'replyTo'>): Promise<Message> {
     const uid = this.userId;
     if (!uid) throw new AppError('NOT_JOINED');
     if (!LIMITS.imageTypes.includes(file.type)) throw new AppError('IMAGE_TYPE_NOT_ALLOWED');
@@ -201,6 +219,7 @@ export class SupabaseChatService implements ChatService {
       p_image_path: path,
       p_width: size.width,
       p_height: size.height,
+      p_reply_to: options?.replyTo ?? null,
     });
     // 失敗時檔案會變成「沒有被任何訊息引用的圖片」，由清理程式稍後刪除
     if (error) throw toError(error);
@@ -466,6 +485,18 @@ export class SupabaseChatService implements ChatService {
       image: row.status === 'retracted' ? null : image,
       createdAt: new Date(row.created_at).toISOString(),
       status: row.status,
+      mentions: row.status === 'retracted' ? [] : (row.mentions ?? []).map((m) => ({ userId: m.user_id, nickname: m.nickname })),
+      replyTo:
+        row.status !== 'retracted' && row.reply_to
+          ? {
+              messageId: row.reply_to,
+              senderId: row.reply_sender_id ?? '',
+              nickname: row.reply_nickname ?? '',
+              kind: row.reply_kind ?? 'text',
+              preview: row.reply_preview,
+              state: row.reply_state ?? 'normal',
+            }
+          : null,
     };
   }
 

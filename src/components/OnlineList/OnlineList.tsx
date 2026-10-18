@@ -1,19 +1,37 @@
 import { useEffect } from 'react';
-import { useChatState } from '../../state/ChatContext';
+import { useChatActions, useChatState } from '../../state/ChatContext';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 
-function UserList() {
+/** 點名單裡的別人 = 把 @代號 放進輸入框；自己那一列不能點 */
+function UserList({ onPicked }: { onPicked?: () => void }) {
   const { online, userId } = useChatState();
+  const actions = useChatActions();
   const { t } = useI18n();
   return (
     <ul className="userlist">
-      {online.map((u) => (
-        <li key={u.userId} className={u.userId === userId ? 'me' : undefined}>
-          <span className="name">{u.nickname}</span>
-          {u.userId === userId && <span className="you">{t('room.you')}</span>}
-        </li>
-      ))}
+      {online.map((u) =>
+        u.userId === userId ? (
+          <li key={u.userId} className="me">
+            <span className="name">{u.nickname}</span>
+            <span className="you">{t('room.you')}</span>
+          </li>
+        ) : (
+          <li key={u.userId}>
+            <button
+              type="button"
+              className="userbtn"
+              aria-label={t('mention.fromList', { name: u.nickname })}
+              onClick={() => {
+                actions.requestMention(u);
+                onPicked?.();
+              }}
+            >
+              <span className="name">{u.nickname}</span>
+            </button>
+          </li>
+        ),
+      )}
     </ul>
   );
 }
@@ -60,7 +78,7 @@ export function OnlineSheet({ onClose }: { onClose: () => void }) {
             <Icon name="close" />
           </button>
         </div>
-        <UserList />
+        <UserList onPicked={onClose} />
       </section>
     </>
   );

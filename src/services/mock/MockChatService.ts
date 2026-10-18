@@ -8,8 +8,11 @@ import {
   type JoinResult,
   type Lang,
   type LinkPreview,
+  type Mention,
   type Message,
   type OnlineUser,
+  type ReplyRef,
+  type SendOptions,
   type TranslateResult,
 } from '../ChatService';
 import { checkNickname, countChars, nicknameKey } from '../../lib/nickname';
@@ -169,10 +172,12 @@ export class MockChatService implements ChatService {
     setSession(KEY_SESSION_NICK, null);
   }
 
-  async sendText(text: string): Promise<Message> {
+  async sendText(text: string, options?: SendOptions): Promise<Message> {
     const me = this.requireMe();
     if (text.trim().length === 0) throw new AppError('TEXT_EMPTY');
     if (countChars(text) > LIMITS.textMax) throw new AppError('TEXT_TOO_LONG');
+    const mentions = this.checkMentions(text, options?.mentions);
+    const replyTo = this.buildReply(options?.replyTo);
     this.checkRate();
     await wait(250);
     if (this.scenarios.has('send-fail')) throw new AppError('NETWORK');
@@ -185,10 +190,12 @@ export class MockChatService implements ChatService {
       image: null,
       createdAt: new Date().toISOString(),
       status: 'normal',
+      mentions,
+      replyTo,
     });
   }
 
-  async sendImage(file: File): Promise<Message> {
+  async sendImage(file: File, options?: Pick<SendOptions, 'replyTo'>): Promise<Message> {
     const me = this.requireMe();
     if (!LIMITS.imageTypes.includes(file.type)) throw new AppError('IMAGE_TYPE_NOT_ALLOWED');
     if (file.size > LIMITS.imageMaxBytes) throw new AppError('IMAGE_TOO_LARGE');
@@ -196,6 +203,7 @@ export class MockChatService implements ChatService {
     if (size.width > LIMITS.imageMaxSide || size.height > LIMITS.imageMaxSide) {
       throw new AppError('IMAGE_TOO_LARGE');
     }
+    const replyTo = this.buildReply(options?.replyTo);
     this.checkRate();
     await wait(700); // 假裝在上傳
     if (this.scenarios.has('send-fail')) throw new AppError('NETWORK');
@@ -209,6 +217,8 @@ export class MockChatService implements ChatService {
       image: { url, width: size.width, height: size.height },
       createdAt: new Date().toISOString(),
       status: 'normal',
+      mentions: [],
+      replyTo,
     });
   }
 
@@ -218,7 +228,9 @@ export class MockChatService implements ChatService {
     const msg = this.find(messageId);
     if (!msg) throw new AppError('MESSAGE_NOT_FOUND');
     if (msg.senderId !== this.userId) throw new AppError('NOT_OWNER');
-    this.update({ ...msg, status: 'retracted', text: null, image: null });
+    this.update({ ...msg, status: 'retracted', text: null, image: null, mentions: [], replyTo: null });
+    // 引用了它的訊息：摘要清掉，改顯示「這則訊息已被收回」
+    this.updateQuoting(messageId, 'retracted');
   }
 
   async report(messageId: string): Promise<void> {
@@ -338,7 +350,48 @@ export class MockChatService implements ChatService {
     const msg = this.find(messageId);
     if (!msg || msg.status !== 'normal') return;
     const count = (readJson<Record<string, string[]>>(KEY_REPORTS, {})[messageId] ?? []).length;
-    if (count >= LIMITS.reportHideAt) this.update({ ...msg, status: 'hidden' });
+    if (count >= LIMITS.reportHideAt) {
+      this.update({ ...msg, status: 'hidden' });
+      this.updateQuoting(messageId, 'hidden');
+    }
+  }
+
+  /** 原訊息被收回或被遮住：所有引用它的訊息，把摘要清掉並標上狀態 */
+  private updateQuoting(originalId: string, state: 'retracted' | 'hidden'): void {
+    for (const m of this.allMessages()) {
+      if (m.replyTo?.messageId === originalId) {
+        this.update({ ...m, replyTo: { ...m.replyTo, preview: null, state } });
+      }
+    }
+  }
+
+  /** 提及：最多 5 個、必須是現在在線的別人、文字裡真的有 @代號（跟真後台的規則一樣） */
+  private checkMentions(text: string, picked: readonly Mention[] | undefined): Mention[] {
+    if (!picked || picked.length === 0) return [];
+    if (picked.length > LIMITS.mentionMax) throw new AppError('TOO_MANY_MENTIONS');
+    const online = new Map(this.allOnline().map((u) => [u.userId, u]));
+    const out: Mention[] = [];
+    for (const m of picked) {
+      const u = online.get(m.userId);
+      if (!u || u.userId === this.userId || out.some((x) => x.userId === u.userId)) continue;
+      if (text.includes(`@${u.nickname}`)) out.push({ userId: u.userId, nickname: u.nickname });
+    }
+    return out;
+  }
+
+  /** 引用：被引用的訊息必須存在且是正常狀態；記下當時的摘要 */
+  private buildReply(replyTo: string | undefined): ReplyRef | null {
+    if (!replyTo) return null;
+    const q = this.find(replyTo);
+    if (!q || q.status !== 'normal') throw new AppError('MESSAGE_NOT_FOUND');
+    return {
+      messageId: q.id,
+      senderId: q.senderId,
+      nickname: q.nickname,
+      kind: q.kind,
+      preview: q.kind === 'text' && q.text ? q.text.slice(0, LIMITS.replyPreviewMax) : null,
+      state: 'normal',
+    };
   }
 
   // ---------- 在線名單 ----------
@@ -437,7 +490,27 @@ export class MockChatService implements ChatService {
         const online = [...this.botsOnline.values()];
         const speaker = online[Math.floor(Math.random() * online.length)];
         if (speaker && this.me) {
-          const text = BOT_LINES[Math.floor(Math.random() * BOT_LINES.length)]!;
+          let text = BOT_LINES[Math.floor(Math.random() * BOT_LINES.length)]!;
+          let mentions: Mention[] = [];
+          let replyTo: ReplyRef | null = null;
+          // 偶爾 @ 你、或引用你最近的一則訊息，讓你看得到「被提到」的樣子
+          const roll = Math.random();
+          const mine = this.allMessages().filter((m) => m.senderId === this.userId && m.status === 'normal' && m.text);
+          if (roll < 0.2) {
+            text = `@${this.me.nickname} ${text}`;
+            mentions = [{ userId: this.userId, nickname: this.me.nickname }];
+          } else if (roll < 0.4 && mine.length > 0) {
+            const q = mine[mine.length - 1]!;
+            text = '收到！';
+            replyTo = {
+              messageId: q.id,
+              senderId: q.senderId,
+              nickname: q.nickname,
+              kind: 'text',
+              preview: (q.text ?? '').slice(0, LIMITS.replyPreviewMax),
+              state: 'normal',
+            };
+          }
           this.publish({
             id: crypto.randomUUID(),
             senderId: speaker.userId,
@@ -447,6 +520,8 @@ export class MockChatService implements ChatService {
             image: null,
             createdAt: new Date().toISOString(),
             status: 'normal',
+            mentions,
+            replyTo,
           });
         }
         this.scheduleBotChat();

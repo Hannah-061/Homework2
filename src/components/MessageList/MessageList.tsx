@@ -7,6 +7,7 @@ import { Icon } from '../Icon';
 import { MessageItem, PendingItem } from '../MessageItem/MessageItem';
 
 interface Props {
+  onQuote: (message: Message) => void;
   onRetract: (message: Message) => void;
   onReport: (message: Message) => void;
   onOpenImage: (message: Message) => void;
@@ -20,10 +21,10 @@ type Entry =
   | { type: 'notice'; at: string; id: string; kind: 'joined' | 'left'; nickname: string };
 
 /** 訊息區：日期分隔線、系統提示、自動捲動、「新訊息」箭頭按鈕 */
-export function MessageList({ onRetract, onReport, onOpenImage }: Props) {
+export function MessageList({ onQuote, onRetract, onReport, onOpenImage }: Props) {
   const { t, lang } = useI18n();
   const actions = useChatActions();
-  const { messages, notices, pending, userId, unseen } = useChatState();
+  const { messages, notices, pending, userId, unseen, unseenMentions } = useChatState();
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
   const scroller = useRef<HTMLDivElement>(null);
@@ -43,6 +44,19 @@ export function MessageList({ onRetract, onReport, onOpenImage }: Props) {
     const el = scroller.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  }, []);
+
+  /** 點引用區：捲到被引用的那則訊息並讓它閃一下；原訊息已經不在（被清掉）就沒有反應 */
+  const jumpTo = useCallback((messageId: string) => {
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+    if (!el) return;
+    stick.current = false;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.remove('flash');
+    // 重新觸發動畫
+    void el.offsetWidth;
+    el.classList.add('flash');
+    window.setTimeout(() => el.classList.remove('flash'), 1600);
   }, []);
 
   const onScroll = () => {
@@ -126,6 +140,11 @@ export function MessageList({ onRetract, onReport, onOpenImage }: Props) {
                     mine={entry.message.senderId === userId}
                     menuOpen={menuFor === entry.message.id}
                     onMenu={(open) => setMenuFor(open ? entry.message.id : null)}
+                    onQuote={() => {
+                      setMenuFor(null);
+                      onQuote(entry.message);
+                    }}
+                    onJump={jumpTo}
                     onRetract={() => {
                       setMenuFor(null);
                       onRetract(entry.message);
@@ -148,8 +167,8 @@ export function MessageList({ onRetract, onReport, onOpenImage }: Props) {
       {unseen > 0 && (
         <button
           type="button"
-          className="newpill"
-          aria-label={t('room.newMessages', { n: unseen })}
+          className={`newpill${unseenMentions > 0 ? ' mention' : ''}`}
+          aria-label={unseenMentions > 0 ? t('room.newMessagesMention') : t('room.newMessages', { n: unseen })}
           onClick={() => {
             scrollToBottom(true);
             stick.current = true;
