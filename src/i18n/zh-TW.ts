@@ -32,6 +32,7 @@ export const zhTW = {
   'err.TRANSLATE_FAILED': '翻譯失敗，請稍後再試',
   'err.TRANSLATE_QUOTA': '今天的翻譯額度用完了',
   'err.PREVIEW_UNAVAILABLE': '無法取得連結預覽',
+  'err.SESSION_EXPIRED': '你已離線太久，請重新進入',
   'err.NETWORK': '連線有問題，請稍後再試。',
 
   'room.title': '匿名聊天室',
@@ -54,7 +55,6 @@ export const zhTW = {
   'room.newMessages': '有 {n} 則新訊息，回到最新',
   'room.reconnecting': '連線中斷，重新連線中…',
   'room.offline': '目前離線',
-  'room.expired': '你已離線太久，請重新進入',
 
   'msg.retracted': '這則訊息已被收回',
   'msg.hidden': '這則訊息因多人檢舉已被遮住',

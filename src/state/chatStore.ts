@@ -291,6 +291,11 @@ export class ChatStore {
 
   // ---------- 翻譯、連結預覽 ----------
 
+  /** 能不能翻譯（不能就不顯示「翻譯」按鈕） */
+  canTranslate(): boolean {
+    return this.service.canTranslate();
+  }
+
   async translate(message: Message, uiLang: Lang): Promise<void> {
     if (!message.text) return;
     const current = this.state.translations[message.id];
@@ -377,6 +382,17 @@ export class ChatStore {
         break;
       case 'message.updated':
         this.set((s) => ({ messages: s.messages.map((m) => (m.id === event.message.id ? event.message : m)) }));
+        break;
+      case 'session.expired':
+        // 離線太久、代號已被釋放：退回輸入代號畫面（保留代號給使用者看）
+        this.clearLeaveTimers();
+        this.set((s) => ({
+          ...initialState,
+          phase: 'join',
+          nickname: s.nickname,
+          joinError: 'SESSION_EXPIRED',
+          previews: s.previews,
+        }));
         break;
     }
   }

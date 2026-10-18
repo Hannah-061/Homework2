@@ -33,6 +33,7 @@ export const en: Dict = {
   'err.TRANSLATE_FAILED': "Couldn't translate. Try again in a moment.",
   'err.TRANSLATE_QUOTA': "Today's translation limit has been reached.",
   'err.PREVIEW_UNAVAILABLE': 'No link preview available.',
+  'err.SESSION_EXPIRED': "You've been offline too long. Please join again.",
   'err.NETWORK': 'Something went wrong with the connection. Try again in a moment.',
 
   'room.title': 'Anonymous Chat',
@@ -55,7 +56,6 @@ export const en: Dict = {
   'room.newMessages': '{n} new messages. Jump to latest.',
   'room.reconnecting': 'Connection lost. Reconnecting…',
   'room.offline': "You're offline",
-  'room.expired': "You've been offline too long. Please join again.",
 
   'msg.retracted': 'This message was unsent',
   'msg.hidden': 'This message was hidden after several reports',

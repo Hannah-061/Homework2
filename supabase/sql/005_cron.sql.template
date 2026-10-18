@@ -1,0 +1,33 @@
+-- 005：定時排程（每分鐘一次）。這是「範本」：三個 __ 開頭的地方要換成真的值才能執行。
+-- 換好的版本不要存進 repo（裡面有 CRON_SECRET）。實際執行時由 Claude 換好後複製到剪貼簿。
+--   __PROJECT_URL__      例如 https://xxxx.supabase.co
+--   __PUBLISHABLE_KEY__  公開金鑰 sb_publishable_...
+--   __CRON_SECRET__      跟 Edge Function Secrets 裡的 CRON_SECRET 同一個值
+
+create extension if not exists pg_cron;
+create extension if not exists pg_net with schema extensions;
+
+-- 1) 超過 2 分鐘沒回報「我還在」的人，從在線名單移除
+select cron.schedule(
+  'prune-stale-users',
+  '* * * * *',
+  $$ delete from public.active_users where last_seen < now() - interval '2 minutes' $$
+);
+
+-- 2) 呼叫 Edge Function cleanup：刪掉超過 50 則的舊訊息，以及沒用到的圖片檔案
+select cron.schedule(
+  'cleanup-chat',
+  '* * * * *',
+  $$
+  select net.http_post(
+    url := '__PROJECT_URL__/functions/v1/cleanup',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'apikey', '__PUBLISHABLE_KEY__',
+      'x-cron-secret', '__CRON_SECRET__'
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 20000
+  );
+  $$
+);

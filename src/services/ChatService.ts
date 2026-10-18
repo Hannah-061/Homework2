@@ -66,6 +66,7 @@ export type ErrorCode =
   | 'TRANSLATE_FAILED'
   | 'TRANSLATE_QUOTA'
   | 'PREVIEW_UNAVAILABLE'
+  | 'SESSION_EXPIRED'
   | 'NETWORK';
 
 /** 畫面只看 code，再去文字表找對應的中英文說明；後台不產生給人看的文字 */
@@ -96,7 +97,9 @@ export type ChatEvent =
   | { type: 'presence.joined'; user: OnlineUser }
   | { type: 'presence.left'; user: OnlineUser }
   | { type: 'message.new'; message: Message }
-  | { type: 'message.updated'; message: Message };
+  | { type: 'message.updated'; message: Message }
+  /** 離線太久，代號已被釋放（或被別人用了）：畫面要退回輸入代號 */
+  | { type: 'session.expired' };
 
 // ---------- 指令（前端 → 後台） ----------
 
@@ -134,6 +137,8 @@ export interface ChatService {
   retract(messageId: string): Promise<void>;
   /** message.report */
   report(messageId: string): Promise<void>;
+  /** 這個後台／瀏覽器能不能翻譯；不能的話，畫面就不顯示「翻譯」按鈕 */
+  canTranslate(): boolean;
   /** message.translate */
   translate(messageId: string, targetLang: Lang): Promise<TranslateResult>;
   /** link.preview */

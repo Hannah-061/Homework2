@@ -112,7 +112,7 @@ export function MessageItem({ message, mine, menuOpen, onMenu, onRetract, onRepo
           <RichText text={message.text ?? ''} />
         </div>
         {url && <LinkPreviewCard url={url} />}
-        {status === 'normal' && message.text && (
+        {status === 'normal' && message.text && actions.canTranslate() && (
           <>
             {tr?.status === 'done' && tr.visible && tr.text && (
               <div className="translation">

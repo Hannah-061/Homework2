@@ -6,7 +6,7 @@
 - 架構與技術選擇：`docs/architecture.md`
 - 畫面設計：`docs/design.md`
 
-**目前在階段一**：只有前端，後台是「假後台」（模擬的），還沒接 Supabase。
+**目前在階段二**：前端有兩種後台可選。`VITE_BACKEND=mock` 是模擬的假後台（階段一），`VITE_BACKEND=supabase` 是真的 Supabase 後台。
 
 ## 本機執行
 
@@ -38,9 +38,12 @@ npm run preview    # 預覽打包結果，網址 http://localhost:4173/Homework2
 
 想把假資料清掉重來：在瀏覽器開發者工具的 Application → Local Storage 刪掉 `anonchat.mock.*`。
 
-## 切換成真後台（階段二）
+## 真後台（階段二）
 
-見 `docs/architecture.md` 第 4、8 節。設定檔看 `.env.example`；**金鑰不可以 commit**。
+- 設定步驟：`docs/architecture.md` 4.1 節（SQL 與 Edge Function 放在 `supabase/`，在 Supabase 後台網頁貼上，不使用命令列工具）。
+- 本機：複製 `.env.example` 成 `.env.local`，填入 Project URL 與 Publishable key，`VITE_BACKEND=supabase`。
+- 整合測試（會真的連到 Supabase）：`npm run test:integration`。
+- **金鑰不可以 commit**。只有 Project URL 和 Publishable key 是公開的。
 
 ## 部署
 

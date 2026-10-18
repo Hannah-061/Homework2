@@ -249,6 +249,10 @@ export class MockChatService implements ChatService {
     });
   }
 
+  canTranslate(): boolean {
+    return true;
+  }
+
   async translate(messageId: string, targetLang: Lang): Promise<TranslateResult> {
     this.requireMe();
     await wait(700);
