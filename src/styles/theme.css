@@ -1,0 +1,28 @@
+/* 匿名聊天室 · 設計變數
+   所有顏色、字體都集中在這個檔案。配色還沒最後決定：之後換配色，只改這裡。
+   （來源：docs/design.md） */
+:root {
+  --ink: #1f1a3d;
+  --muted: #5a5580;
+  --paper: #fff4d1;
+  --white: #ffffff;
+  --orange: #ffb27a;
+  --mint: #62e0a8;
+  --sun: #ffd447;
+  --violet: #8566ff;
+  --sky: #86d8ff;
+  --sky-soft: #e4f6ff;
+  --night: #2a2257;
+  --night-text: #ece8ff;
+  --danger: #b3123a;
+  --danger-soft: #fff0e2;
+  --disabled-bg: #ddd8c4;
+
+  --b: 3px solid var(--ink);
+  --sh: 4px 4px 0 var(--ink);
+  --sh-sm: 3px 3px 0 var(--ink);
+  --sh-xs: 2px 2px 0 var(--ink);
+
+  --font: 'Huninn', 'Noto Sans TC', system-ui, -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  --pixel: 'Press Start 2P', ui-monospace, monospace;
+}

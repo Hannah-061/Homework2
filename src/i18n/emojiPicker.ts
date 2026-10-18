@@ -1,0 +1,28 @@
+// emoji-picker-element 內建的語言檔只有簡體中文，所以繁體中文的選單文字自己提供。
+export const emojiPickerZhTW = {
+  categoriesLabel: '分類',
+  emojiUnsupportedMessage: '你的瀏覽器不支援彩色表情符號。',
+  favoritesLabel: '常用',
+  loadingMessage: '載入中…',
+  networkErrorMessage: '無法載入表情符號。',
+  regionLabel: '表情符號選單',
+  searchDescription: '有搜尋結果時，按上下鍵選擇，按 Enter 送出。',
+  searchLabel: '搜尋',
+  searchResultsLabel: '搜尋結果',
+  skinToneDescription: '展開後，按上下鍵選擇，按 Enter 確定。',
+  skinToneLabel: '選擇膚色（目前：{skinTone}）',
+  skinTonesLabel: '膚色',
+  skinTones: ['預設', '淺', '中淺', '中', '中深', '深'],
+  categories: {
+    custom: '自訂',
+    'smileys-emotion': '表情符號',
+    'people-body': '人物與身體',
+    'animals-nature': '動物與自然',
+    'food-drink': '飲食',
+    'travel-places': '旅遊與地點',
+    activities: '活動',
+    objects: '物品',
+    symbols: '符號',
+    flags: '旗幟',
+  },
+};

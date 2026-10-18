@@ -1,0 +1,164 @@
+/**
+ * 前端和後台之間的「合約」（docs/architecture.md 第 5 節）。
+ *
+ * 畫面元件只認這個檔案。階段一由 services/mock 實作（假後台），
+ * 階段二由 services/supabase 實作（真後台），兩者吐出來的資料格式與事件完全一樣。
+ */
+
+export type Lang = 'zh' | 'en';
+
+// ---------- 資料格式 ----------
+
+export type MessageKind = 'text' | 'image';
+/** normal 正常 / retracted 已收回 / hidden 因被檢舉達 3 人而遮住 */
+export type MessageStatus = 'normal' | 'retracted' | 'hidden';
+
+export interface ImageInfo {
+  url: string;
+  width: number;
+  height: number;
+}
+
+export interface Message {
+  id: string;
+  senderId: string;
+  nickname: string;
+  kind: MessageKind;
+  text: string | null;
+  image: ImageInfo | null;
+  /** ISO 8601，UTC，例如 2026-10-18T14:32:05Z */
+  createdAt: string;
+  status: MessageStatus;
+}
+
+export interface OnlineUser {
+  userId: string;
+  nickname: string;
+  /** ISO 8601 */
+  joinedAt: string;
+}
+
+export interface LinkPreview {
+  url: string;
+  siteName: string;
+  title: string | null;
+  description: string | null;
+  /** 僅限 https */
+  thumbnailUrl: string | null;
+}
+
+// ---------- 錯誤 ----------
+
+export type ErrorCode =
+  | 'NICKNAME_INVALID'
+  | 'NICKNAME_TAKEN'
+  | 'ROOM_FULL'
+  | 'NOT_JOINED'
+  | 'TEXT_EMPTY'
+  | 'TEXT_TOO_LONG'
+  | 'IMAGE_TOO_LARGE'
+  | 'IMAGE_TYPE_NOT_ALLOWED'
+  | 'RATE_LIMITED'
+  | 'NOT_OWNER'
+  | 'MESSAGE_NOT_FOUND'
+  | 'CANNOT_REPORT_OWN'
+  | 'ALREADY_REPORTED'
+  | 'TRANSLATE_FAILED'
+  | 'TRANSLATE_QUOTA'
+  | 'PREVIEW_UNAVAILABLE'
+  | 'NETWORK';
+
+/** 畫面只看 code，再去文字表找對應的中英文說明；後台不產生給人看的文字 */
+export class AppError extends Error {
+  readonly code: ErrorCode;
+  readonly retryAfterSeconds?: number;
+
+  constructor(code: ErrorCode, retryAfterSeconds?: number) {
+    super(code);
+    this.name = 'AppError';
+    this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+export function toAppError(e: unknown): AppError {
+  return e instanceof AppError ? e : new AppError('NETWORK');
+}
+
+// ---------- 事件（後台 → 前端） ----------
+
+export type ConnectionStatus = 'connected' | 'reconnecting' | 'offline';
+
+export type ChatEvent =
+  | { type: 'connection.status'; status: ConnectionStatus }
+  /** 剛進來與重新連線之後的完整名單；不會產生進出提示 */
+  | { type: 'presence.sync'; users: OnlineUser[] }
+  | { type: 'presence.joined'; user: OnlineUser }
+  | { type: 'presence.left'; user: OnlineUser }
+  | { type: 'message.new'; message: Message }
+  | { type: 'message.updated'; message: Message };
+
+// ---------- 指令（前端 → 後台） ----------
+
+export interface JoinResult {
+  userId: string;
+  /** 最近 50 則，由舊到新 */
+  messages: Message[];
+  onlineUsers: OnlineUser[];
+}
+
+export interface TranslateResult {
+  translatedText: string;
+  targetLang: Lang;
+}
+
+export type ChatEventListener = (event: ChatEvent) => void;
+
+export interface ChatService {
+  /**
+   * 這個瀏覽器（或分頁）上次用的代號。有的話，畫面會自動用它進入聊天室。
+   * 階段一的假後台記在分頁裡（一個分頁 = 一個人）；階段二記在瀏覽器裡。
+   */
+  restoreSession(): string | null;
+
+  /** room.join */
+  join(nickname: string): Promise<JoinResult>;
+  /** room.leave：釋放代號，並忘記上次的代號 */
+  leave(): Promise<void>;
+
+  /** message.sendText */
+  sendText(text: string): Promise<Message>;
+  /** message.sendImage（檔案已經在前端檢查並重新壓縮過） */
+  sendImage(file: File): Promise<Message>;
+  /** message.retract */
+  retract(messageId: string): Promise<void>;
+  /** message.report */
+  report(messageId: string): Promise<void>;
+  /** message.translate */
+  translate(messageId: string, targetLang: Lang): Promise<TranslateResult>;
+  /** link.preview */
+  previewLink(url: string): Promise<LinkPreview>;
+
+  /** 訂閱事件；回傳取消訂閱的函式 */
+  subscribe(listener: ChatEventListener): () => void;
+}
+
+// ---------- 全站共用的規則（前端檢查與假後台共用；真後台在資料庫函式裡再檢查一次） ----------
+
+export const LIMITS = {
+  nicknameMax: 12,
+  textMax: 500,
+  /** 超過這個字數才顯示剩餘字數 */
+  textWarnAt: 450,
+  historySize: 50,
+  imageMaxBytes: 5 * 1024 * 1024,
+  imageMaxSide: 4096,
+  imageTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as readonly string[],
+  /** 10 秒內最多 5 則（含圖片） */
+  rateWindowMs: 10_000,
+  rateMaxMessages: 5,
+  /** 檢舉達這個人數就遮住 */
+  reportHideAt: 3,
+  /** 別人離開後，等這麼久還沒回來才顯示「離開了」 */
+  leaveGraceMs: 10_000,
+} as const;
